@@ -1,0 +1,96 @@
+
+
+대량의 데이터 INSERT시 빠르게 하는방법
+
+-> 주의 : undo log와 redo log가 쌓이지 않습니다
+
+즉 롤백할수 없으며 장애시 복구불가능 합니다
+
+관리상 대량의 임시 데이터를 INSERT 할때 사용하는것이 바람직 합니다
+
+PARALLEL 사용
+
+
+DROP INDEX pks_target_t;
+
+ALTER SESSION ENABLE PARALLEL DML;
+
+ALTER TABLE target_t NOLOGGING;
+
+INSERT/*+PARALLEL (target_t, 4)*/ INTO target_t
+
+SELECT /*+ PARALLEL (source_t, 4) */ * FROM source_t;
+
+COMMIT;
+
+ALTER TABLE target_t LOGGING;
+
+ALTER SESSION DISABLE PARALLEL DML;
+
+CREATA INDEX pks_target_t ON target_t (...);
+
+APPEND 사용
+
+
+DROP INDEX pks_target_t;
+
+ALTER TABLE target_t NOLOGGING;
+
+INSERT/*+APPEND*/ INTO target_t
+
+SELECT * FROM source_t;
+
+COMMIT;
+
+ALTER TABLE target_t LOGGING;
+
+CREATA INDEX pks_target_t ON target_t (...);
+
+APPEND 사용시 주의
+
+1. 인덱스를 UNUSABLE상태로 설정(미사용상태로전환)
+
+2. 대량 적재 시 상태가 UNUSABLE인 인덱스를 지나치도록 세션 설정
+
+3. 인덱스를 다시 활성화
+
+* DROP INDEX이후 CREATE INDEX명령이 실패한 사례가 많다.
+
+* 아무것도 변경되지 않았는데 마지막 데이터 적재 후에 성능이 현저히 낮아졌다면 인덱스가 유실되었는지를 살펴봐야 함.
+
+인덱스가 유실되었다면 인덱스를 재생성하면 성능이 정상화된다
+
+
+ALTER INDEX TAB_IX1 UNUSABLE;
+
+ALTERSESSION SET SKIP_UNUSABLE_INDEXES=TRUE;
+
+INSERT /*+ APPEND */ INTO TAB SELECT * FROM TAB_TEMP;
+
+ALTER INDEX TAB_IX1 REBUILD NOLOGGING; -- UNUSABLE상태는 REBUILD를 해주어야 풀림
+
+ALTER INDEX TAB_IX1 LOGGING; 
+
+
+오라클 공식 문서 direct-path Insert 동작
+
+During direct-path INSERT operations, 
+the database appends the inserted data after existing data in the table. Data is written directly into data files, bypassing the buffer cache. Free space in the table is not reused, and referential integrity constraints are ignored. Direct-path INSERT can perform significantly better than
+conventional insert
+
+번역하자면 삽입된 데이터를 테이블의 기존 데이터 뒤에 추가합니다. 버퍼 캐시를 우회하여 데이터가 데이터파일에 직접 기록됩니다. 
+테이블의 사용 가능한 공간은 재사용되지 않으며 참조 무결성 제약조건은 무시됩니다.
+Direct-path Insert는 기존의 INSERT 방식보다 훨씬 뛰어난 성능을 제공합니다.
+
+
+
+출처: https://sunder4.tistory.com/505?category=457721 [막퍼]
+
+
+
+
+
+
+
+
+
